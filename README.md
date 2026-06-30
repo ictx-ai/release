@@ -8,10 +8,12 @@ Binary releases for the ictx security tooling suite.
 curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 ```
 
+Downloads are verified against `ictx-*-<platform>-<arch>.tar.gz.sha256` when published with the release.
+
 ## Prerequisites
 
-- Java 17+
-- opengrep or semgrep in `$PATH`
+- Java 17+ (for `java-extractor` on JVM repos)
+- [opengrep](https://github.com/opengrep/opengrep) or semgrep on `$PATH`
 
 ## After install
 
@@ -19,19 +21,21 @@ curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | b
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Verify:
+### Scan a repo
+
+`sense` indexes the repo, runs opengrep, investigates findings, and writes artifacts under `~/.ictx/<project>/`:
 
 ```bash
-sense -V
+sense run /path/to/your/repo
 ```
 
-## Usage
+### Review findings
+
+After a scan, use `lens` with the project name (usually the repo directory basename):
 
 ```bash
-sense run /path/to/source
+lens my-repo
 ```
-
-See `sense --help` for details.
 
 ## Updating
 
@@ -39,10 +43,10 @@ Re-run the one-liner installer.
 
 ## Troubleshooting
 
-- Java 17+ required.
-- opengrep/semgrep must be installed and in PATH.
-- Rules are shipped next to the binaries.
+- Ensure `~/.local/bin` is on your `PATH`.
+- Rules ship next to the binaries under `~/.local/bin/rules/`.
+- Set `SKIP_SHA=1` only if installing an older release without a checksum file.
 
 ## License
 
-ICTX is licensed under the MIT License.
+MIT License.

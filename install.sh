@@ -4,35 +4,30 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 #
-# This script always installs the latest release directly into
-# $HOME/.local/bin (no versioned directories). Rules are placed next
-# to the binaries so sense finds them automatically.
+# Installs the latest release into $HOME/.local/bin (flat layout).
+# Rules ship next to binaries so sense finds them automatically.
 #
 # Options (environment):
+#   VERSION=...        Pin a release tag (default: latest from GitHub)
 #   PLATFORM=...       Override (linux|darwin)
 #   ARCH=...           Override (x86_64|aarch64)
-#   NO_VERIFY=1        Skip the post-install sanity checks
-#
-# After install:
-#   export PATH="$HOME/.local/bin:$PATH"
+#   NO_VERIFY=1        Skip post-install smoke checks
+#   SKIP_SHA=1         Skip tarball checksum verification (not recommended)
 
 set -euo pipefail
 
 REPO="ictx-ai/release"
-
-# Always install into ~/.local/bin (flat, no versioned folders).
-# Rules are placed next to the binaries (where sense expects them).
-BIN_DIR="$HOME/.local/bin"
+BIN_DIR="${HOME}/.local/bin"
 
 VERSION="${VERSION:-}"
 PLATFORM="${PLATFORM:-}"
 ARCH="${ARCH:-}"
 NO_VERIFY="${NO_VERIFY:-0}"
+SKIP_SHA="${SKIP_SHA:-0}"
 
-die() { echo "ERROR: $*" >&2; exit 1; }
-info() { echo ">> $*"; }
+die() { echo "ictx install: error: $*" >&2; exit 1; }
+note() { echo "ictx install: $*"; }
 
-# Detect platform/arch if not provided
 detect_platform() {
   local uname_s uname_m
   uname_s="$(uname -s)"
@@ -41,37 +36,61 @@ detect_platform() {
   case "$uname_s" in
     Linux)  PLATFORM="linux" ;;
     Darwin) PLATFORM="darwin" ;;
-    *) die "Unsupported OS: $uname_s" ;;
+    *) die "unsupported OS: $uname_s" ;;
   esac
 
   case "$uname_m" in
     x86_64|amd64) ARCH="x86_64" ;;
     arm64|aarch64) ARCH="aarch64" ;;
-    *) die "Unsupported architecture: $uname_m" ;;
+    *) die "unsupported architecture: $uname_m" ;;
   esac
 }
 
-# Resolve latest version from GitHub releases API (best effort)
 resolve_latest_version() {
+  command -v curl >/dev/null 2>&1 || return 0
+  curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
+    | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4 || true
+}
+
+ensure_version() {
+  [[ -n "$VERSION" ]] && return 0
+  VERSION="$(resolve_latest_version || true)"
+  [[ -n "$VERSION" ]] || die "could not determine latest release from GitHub"
+}
+
+download() {
+  local url="$1" dest="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
-      | grep -o '"tag_name": *"[^"]*"' | head -1 | cut -d'"' -f4 || true
+    curl -fsSL -o "$dest" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O "$dest" "$url"
+  else
+    die "need curl or wget"
   fi
 }
 
-# Always install the latest release (unless VERSION is explicitly provided for advanced use)
-ensure_version() {
-  if [[ -z "$VERSION" ]]; then
-    info "Fetching latest release..."
-    local latest
-    latest="$(resolve_latest_version || true)"
-    if [[ -n "$latest" ]]; then
-      VERSION="$latest"
-      info "Latest release: $VERSION"
-    else
-      die "Could not determine latest release from GitHub. Try again later."
-    fi
+verify_sha256() {
+  local file="$1" sum_file="$2"
+  [[ -f "$sum_file" ]] || die "checksum file missing: $sum_file"
+  local dir base
+  dir="$(cd "$(dirname "$file")" && pwd)"
+  base="$(basename "$file")"
+  # Normalize checksum line to the local basename (publish uses tarball basename).
+  local expected
+  expected="$(awk '{print $1}' "$sum_file")"
+  [[ -n "$expected" ]] || die "empty checksum file"
+  local actual
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$file" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else
+    die "need sha256sum or shasum to verify download"
   fi
+  if [[ "$actual" != "$expected" ]]; then
+    die "checksum mismatch for ${base} (expected ${expected}, got ${actual})"
+  fi
+  note "checksum verified (${base})"
 }
 
 main() {
@@ -81,43 +100,35 @@ main() {
   local pkg_name="ictx-${VERSION}-${PLATFORM}-${ARCH}"
   local tarball="${pkg_name}.tar.gz"
   local url="https://github.com/${REPO}/releases/download/${VERSION}/${tarball}"
+  local sha_url="${url}.sha256"
 
-  info "Installing ictx ${VERSION} for ${PLATFORM}-${ARCH} into $HOME/.local/bin"
+  note "installing ${VERSION} (${PLATFORM}-${ARCH}) → ${BIN_DIR}"
 
   local tmpdir
   tmpdir="$(mktemp -d)"
-  # Embed path in trap — local tmpdir is out of scope when EXIT runs under set -u.
   trap "rm -rf '${tmpdir}'" EXIT
 
   local tar_path="${tmpdir}/${tarball}"
+  local sha_path="${tmpdir}/${tarball}.sha256"
 
-  info "Downloading ${url}"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fL --progress-bar -o "${tar_path}" "${url}" || die "Download failed: $url"
-  elif command -v wget >/dev/null 2>&1; then
-    wget -O "${tar_path}" "${url}" || die "Download failed: $url"
-  else
-    die "Need curl or wget to download"
+  download "$url" "$tar_path"
+
+  if [[ "$SKIP_SHA" != "1" ]]; then
+    if download "$sha_url" "$sha_path" 2>/dev/null; then
+      verify_sha256 "$tar_path" "$sha_path"
+    else
+      note "warning: no ${tarball}.sha256 on release — skipping checksum (use SKIP_SHA=1 to silence)"
+    fi
   fi
 
-  info "Extracting..."
   mkdir -p "$tmpdir/extract"
-  tar -xzf "${tar_path}" -C "$tmpdir/extract"
+  tar -xzf "$tar_path" -C "$tmpdir/extract"
 
-  local extracted_dir="$tmpdir/extract/${pkg_name}"
-  if [[ ! -d "$extracted_dir" ]]; then
-    extracted_dir="$tmpdir/extract/ictx-${VERSION}-${PLATFORM}-${ARCH}"
-  fi
+  local extracted_dir="${tmpdir}/extract/${pkg_name}"
+  [[ -d "$extracted_dir" ]] || die "unexpected tarball layout (missing ${pkg_name}/)"
 
-  if [[ ! -d "$extracted_dir" ]]; then
-    ls -la "$tmpdir/extract" | head -10
-    die "Failed to find extracted package inside tarball"
-  fi
+  mkdir -p "$BIN_DIR"
 
-  info "Installing binaries to ${BIN_DIR}"
-  mkdir -p "${BIN_DIR}"
-
-  # Install executables directly (no versioned folder)
   for b in sense pulse lens config-extractor python-extractor java-extractor; do
     if [[ -f "${extracted_dir}/bin/${b}" ]]; then
       cp -f "${extracted_dir}/bin/${b}" "${BIN_DIR}/${b}"
@@ -125,44 +136,44 @@ main() {
     fi
   done
 
-  # java-extractor-libs next to the wrapper
   if [[ -d "${extracted_dir}/bin/java-extractor-libs" ]]; then
     rm -rf "${BIN_DIR}/java-extractor-libs"
     cp -R "${extracted_dir}/bin/java-extractor-libs" "${BIN_DIR}/"
   fi
 
-  # rules/ next to the binaries (sense auto-discovers exe_dir/rules/opengrep/core)
   if [[ -d "${extracted_dir}/rules" ]]; then
     rm -rf "${BIN_DIR}/rules"
     cp -R "${extracted_dir}/rules" "${BIN_DIR}/"
   fi
 
-
   if [[ "$NO_VERIFY" != "1" ]]; then
-    info "Verifying installation..."
-    export PATH="${BIN_DIR}:${PATH}"
-
-    if command -v sense >/dev/null 2>&1; then
-      sense -V || true
-    else
-      echo "WARN: sense not found on PATH yet"
+    if [[ ! -x "${BIN_DIR}/sense" ]]; then
+      die "sense binary missing after install"
     fi
-
-    if [[ -d "${BIN_DIR}/rules/opengrep/core" ]]; then
-      echo "  rules present: OK"
-    else
-      echo "  WARN: rules/opengrep/core not found next to binaries"
+    if [[ ! -d "${BIN_DIR}/rules/opengrep/core" ]]; then
+      note "warning: rules/opengrep/core not found — install opengrep rules or set ICTX_RULES_ROOT"
     fi
-
-    echo ""
-    echo "Done. Add to your shell profile:"
-    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
-    echo ""
-    echo "Then run:"
-    echo "  sense run /path/to/a/repo"
-  else
-    info "Install complete (verification skipped)."
   fi
+
+  cat <<EOF
+
+ictx ${VERSION} installed to ${BIN_DIR}
+
+Add to your shell profile (if needed):
+  export PATH="\$HOME/.local/bin:\$PATH"
+
+Scan a repository (index → opengrep → investigate → ~/.ictx/<project>/):
+  sense run /path/to/your/repo
+
+Review findings after a scan (project name = repo directory basename):
+  lens <project>
+
+More help:
+  sense --help
+  lens --help
+
+Prerequisites: Java 17+ (java-extractor), opengrep or semgrep on PATH.
+EOF
 }
 
 main "$@"
