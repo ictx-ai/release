@@ -1,16 +1,10 @@
 name: Publish Release
 
-# This workflow helps publish ictx binary tarballs to the public release repository.
+# Manual / emergency publish for ictx binary tarballs (curl + GitHub REST API only).
 #
-# Primary flow (recommended):
-#   The ictx monorepo CI builds the tarballs on tag push and then uses `gh release create`
-#   with a PAT (or GitHub App token) that has write access to ictx-ai/release.
+# Primary flow: ictx-ai/ictx tag CI builds tarballs and publishes here automatically.
 #
-# Manual / emergency flow:
-#   Use "Run workflow" and provide the version. Attach the tarballs via a prior
-#   build artifact or upload them directly in a follow-up step (or use the GitHub UI).
-#
-# You can also call this via repository_dispatch from the ictx repo.
+# Place tarballs in dist/ before running, or attach via a prior artifact download step.
 
 on:
   workflow_dispatch:
@@ -29,7 +23,6 @@ on:
         required: false
         type: string
 
-  # Allow the ictx CI (or other automation) to ask us to create a release.
   repository_dispatch:
     types: [publish-release]
 
@@ -40,8 +33,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout release repo (for any metadata)
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
       - name: Resolve inputs
         id: inputs
@@ -61,67 +53,54 @@ jobs:
             NAME="ictx ${VERSION}"
           fi
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
-
-          TAG="$VERSION"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Download assets from calling workflow artifacts (if provided)
         if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.artifact_run_id != '' }}
         uses: actions/download-artifact@v7
         with:
-          # When dispatching you can pass the run id of the build job that produced the artifacts
           run-id: ${{ github.event.client_payload.artifact_run_id }}
           path: dist
-          # pattern / merge handled by caller
           merge-multiple: true
 
-      - name: Collect any local dist tarballs (manual upload path)
+      - name: Collect dist tarballs
         run: |
           mkdir -p dist
-          # If someone uploaded artifacts to this run via the UI or previous job, pick them up
           find . -name 'ictx-*.tar.gz' -not -path './dist/*' -exec cp {} dist/ \; 2>/dev/null || true
           ls -lh dist/ || true
 
-      - name: Create or update the GitHub Release
+      - name: Write release notes
+        run: |
+          cat > release-notes.md <<EOF
+          ictx ${{ steps.inputs.outputs.version }}
+
+          Install:
+          curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
+
+          Prerequisites: Java 17+, opengrep (or semgrep) on PATH.
+
+          See README.md for manual tarball install.
+          EOF
+
+      - name: Create or update GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${{ steps.inputs.outputs.version }}"
-          TAG="${{ steps.inputs.outputs.tag }}"
-          NAME="${{ steps.inputs.outputs.name }}"
-          PRERELEASE="${{ steps.inputs.outputs.prerelease }}"
-
-          # Create the release (or update if it already exists for this tag)
-          # We use --generate-notes minimally; caller can provide better body via dispatch if wanted.
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $TAG already exists — uploading additional assets if any."
-          else
-            BODY="ictx ${VERSION}
-
-            Install:
-            curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
-
-            Prerequisites: Java 17+, opengrep (or semgrep) on PATH.
-
-            See README.md for manual tarball install."
-
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$NAME" \
-              --notes "$BODY" \
-              $([[ "$PRERELEASE" == "true" ]] && echo "--prerelease" || true)
-          fi
-
-          # Upload any tarballs present in dist/
           shopt -s nullglob
           assets=(dist/ictx-*.tar.gz)
-          if (( ${#assets[@]} )); then
-            echo "Uploading ${#assets[@]} asset(s)..."
-            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            echo "No tarballs found in ./dist to upload."
-            echo "Attach them manually via the GitHub Releases UI or re-run with assets."
+          args=(
+            --repo "${{ github.repository }}"
+            --tag "${{ steps.inputs.outputs.tag }}"
+            --title "${{ steps.inputs.outputs.name }}"
+            --notes-file release-notes.md
+          )
+          if [[ "${{ steps.inputs.outputs.prerelease }}" == "true" ]]; then
+            args+=(--prerelease)
           fi
-
-          echo "Release URL: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo "WARN: no tarballs in dist/ — creating release without assets"
+            ./scripts/github-release-publish.sh "${args[@]}"
+          else
+            ./scripts/github-release-publish.sh "${args[@]}" "${assets[@]}"
+          fi

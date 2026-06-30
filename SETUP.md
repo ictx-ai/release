@@ -31,11 +31,22 @@ Use a fine-grained PAT with access **only** to `ictx-ai/release` and **Contents:
 
 In this repo: Actions → "Publish Release" workflow.
 
-Or from a checkout with built tarballs:
+Or from a checkout with built tarballs (curl + GitHub REST API — no `gh` CLI):
 
 ```bash
-gh release create "0.5.0" --repo ictx-ai/release --title "ictx 0.5.0"
-gh release upload "0.5.0" dist/*.tar.gz --repo ictx-ai/release --clobber
+export GITHUB_TOKEN="<PAT with contents:write on ictx-ai/release>"
+cat > /tmp/release-notes.md <<'EOF'
+ictx 0.5.0
+
+Install:
+curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
+EOF
+./scripts/github-release-publish.sh \
+  --repo ictx-ai/release \
+  --tag 0.5.0 \
+  --title "ictx 0.5.0" \
+  --notes-file /tmp/release-notes.md \
+  dist/ictx-0.5.0-*.tar.gz
 ```
 
 After publishing, users can run the installer:
@@ -47,8 +58,9 @@ curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | b
 ## Verifying a Release
 
 ```bash
-gh release view 0.5.0 --repo ictx-ai/release
-gh release download 0.5.0 --repo ictx-ai/release --pattern '*darwin-aarch64*'
+curl -fsSL "https://api.github.com/repos/ictx-ai/release/releases/tags/0.5.0" | jq '.assets[].name'
+curl -fL -o /tmp/ictx.tgz \
+  "https://github.com/ictx-ai/release/releases/download/0.5.0/ictx-0.5.0-darwin-aarch64.tar.gz"
 ```
 
 See the installer behavior in [README](./README.md).
