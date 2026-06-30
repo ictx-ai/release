@@ -43,7 +43,7 @@ sense -V
 
 ### Manual install (without the script)
 
-1. Download a tarball from [Releases](https://github.com/ictx-ai/release/releases).
+1. Download a **platform tarball** from [Releases](https://github.com/ictx-ai/release/releases) — the file named `ictx-<version>-<platform>-<arch>.tar.gz`. Ignore any GitHub **Source code (zip/tar.gz)** entries; those are auto-generated repo snapshots, not the binary distribution.
 
 2. Extract the contents and place them directly (rules go next to the binaries):
 

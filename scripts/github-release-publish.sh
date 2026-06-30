@@ -145,4 +145,23 @@ for file in "${ASSETS[@]}"; do
   upload_asset "$upload_base" "$file"
 done
 
+# GitHub auto-attaches "Source code (zip/tar.gz)" to every release. We only ship binaries.
+delete_github_source_archives() {
+  local json="$1"
+  local ids name
+  while IFS= read -r id; do
+    [[ -z "$id" || "$id" == "null" ]] && continue
+    name="$(jq -r --argjson id "$id" '.assets[] | select(.id == $id) | .name' <<<"$json")"
+    echo "  removing auto-generated source archive: ${name}"
+    delete_asset "$id"
+  done < <(jq -r '.assets[]? | select(
+      .name == "Source code (zip)"
+      or .name == "Source code (tar.gz)"
+    ) | .id' <<<"$json")
+}
+
+echo "Removing GitHub auto-generated source archives (binaries-only release) ..."
+release_json="$(api GET "https://api.github.com/repos/${REPO}/releases/${release_id}")"
+delete_github_source_archives "$release_json"
+
 echo "Published: https://github.com/${REPO}/releases/tag/${TAG}"
