@@ -1,16 +1,17 @@
 name: Publish Release
 
-# Manual / emergency publish for ictx binary tarballs (curl + GitHub REST API only).
+# Publishes ictx binary tarballs using this repo's GITHUB_TOKEN only.
 #
-# Primary flow: ictx-ai/ictx tag CI builds tarballs and publishes here automatically.
+# Primary flow: ictx-ai/ictx tag CI builds artifacts, then repository_dispatch
+# triggers this workflow with version + workflow run id.
 #
-# Place tarballs in dist/ before running, or attach via a prior artifact download step.
+# Manual: Actions → Run workflow → enter version (tarballs must already be in dist/).
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag (e.g. 0.5.0). The release will be created with this tag."
+        description: "Version tag (e.g. 0.5.0)"
         required: true
         type: string
       prerelease:
@@ -27,6 +28,7 @@ on:
     types: [publish-release]
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -55,11 +57,20 @@ jobs:
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Download assets from calling workflow artifacts (if provided)
-        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.artifact_run_id != '' }}
+          SOURCE_REPO="${{ github.event.client_payload.repository || 'ictx-ai/ictx' }}"
+          echo "source_repo=${SOURCE_REPO}" >> "$GITHUB_OUTPUT"
+
+          RUN_ID="${{ github.event.client_payload.run_id || '' }}"
+          echo "run_id=${RUN_ID}" >> "$GITHUB_OUTPUT"
+
+      - name: Download build artifacts from ictx monorepo
+        if: ${{ steps.inputs.outputs.run_id != '' }}
         uses: actions/download-artifact@v7
         with:
-          run-id: ${{ github.event.client_payload.artifact_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ steps.inputs.outputs.source_repo }}
+          run-id: ${{ steps.inputs.outputs.run_id }}
+          pattern: ictx-*
           path: dist
           merge-multiple: true
 
@@ -77,9 +88,12 @@ jobs:
           Install:
           curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 
-          Prerequisites: Java 17+, opengrep (or semgrep) on PATH.
+          Platform tarballs (ignore any GitHub "Source code" entries):
+          - ictx-${{ steps.inputs.outputs.version }}-linux-x86_64.tar.gz
+          - ictx-${{ steps.inputs.outputs.version }}-linux-aarch64.tar.gz
+          - ictx-${{ steps.inputs.outputs.version }}-darwin-aarch64.tar.gz
 
-          See README.md for manual tarball install.
+          Prerequisites: Java 17+, opengrep (or semgrep) on PATH.
           EOF
 
       - name: Create or update GitHub Release
@@ -99,8 +113,7 @@ jobs:
             args+=(--prerelease)
           fi
           if [[ ${#assets[@]} -eq 0 ]]; then
-            echo "WARN: no tarballs in dist/ — creating release without assets"
-            ./scripts/github-release-publish.sh "${args[@]}"
-          else
-            ./scripts/github-release-publish.sh "${args[@]}" "${assets[@]}"
+            echo "ERROR: no tarballs in dist/"
+            exit 1
           fi
+          ./scripts/github-release-publish.sh "${args[@]}" "${assets[@]}"
