@@ -4,57 +4,44 @@ This repository (`ictx-ai/release`) is the public home for downloadable ictx bin
 
 ## How Releases Are Published
 
-1. A maintainer runs `make release` (or `BUMP=minor make release`) in the `ictx` monorepo.
-   - This bumps versions, commits, tags (e.g. `0.5.0`), and pushes the tag.
-2. GitHub Actions in `ictx-ai/ictx` (see `.github/workflows/release.yml`) sees the tag push.
-3. It builds the three supported platforms, packages tarballs, and publishes a proper GitHub Release **in this repository** (`ictx-ai/release`).
+- A maintainer creates a semver tag in the private `ictx-ai/ictx` repo (via `make release`).
+- CI builds for linux + darwin (x86_64 + aarch64).
+- Official releases (with platform tarballs) are published here in the public `ictx-ai/release` repo.
 
-Snapshots from `main` continue to be published as pre-releases inside the `ictx` repository for developers.
+Main branch builds produce snapshot pre-releases in the private repo only.
 
-## Required Secret (in the ictx repository)
+## Required Secret (in the private ictx repository)
 
-In the **private ictx** repository (https://github.com/ictx-ai/ictx) settings → Secrets and variables → Actions, create:
+In https://github.com/ictx-ai/ictx → Settings → Secrets and variables → Actions, create:
 
 - `PUBLIC_RELEASE_TOKEN`
 
-This token must have permission to create releases and upload assets to `ictx-ai/release`.
+Use a fine-grained PAT with access **only** to `ictx-ai/release` and **Contents: Read and write**.
 
-Recommended: a fine-grained personal access token (PAT) scoped **only** to the `ictx-ai/release` repository with "Contents: Read and write". 
-
-**Do not** put the secret in the public release repo. The workflow in the private ictx repo reads it via `secrets.PUBLIC_RELEASE_TOKEN`.
-
-You can also name it differently and update the workflow.
+(The workflow uses it to publish tarballs to this public repo on tag.)
 
 ## Manual / Emergency Publish
 
-Use the "Publish Release" workflow in this repository (Actions → Publish Release) and provide the version.
+In this repo: Actions → "Publish Release" workflow.
 
-You can also run from a machine that has the built `dist/*.tar.gz`:
+Or from a checkout with built tarballs:
 
 ```bash
-VERSION=0.5.0
-gh release create "$VERSION" --repo ictx-ai/release --title "ictx $VERSION"
-gh release upload "$VERSION" dist/*.tar.gz --repo ictx-ai/release --clobber
+gh release create "0.5.0" --repo ictx-ai/release --title "ictx 0.5.0"
+gh release upload "0.5.0" dist/*.tar.gz --repo ictx-ai/release --clobber
 ```
 
-Or use the one-liner installer flow after the release exists:
+After publishing, users can run the installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 ```
 
-## Adding a New Platform
-
-Extend the matrix in `ictx/.github/workflows/release.yml` and update `helpers/package-dist.sh` if needed.
-
 ## Verifying a Release
-
-After a release is published:
 
 ```bash
 gh release view 0.5.0 --repo ictx-ai/release
 gh release download 0.5.0 --repo ictx-ai/release --pattern '*darwin-aarch64*'
-tar -tzf ictx-0.5.0-darwin-aarch64.tar.gz | head
 ```
 
-Then follow the main [README](./README.md).
+See the installer behavior in [README](./README.md).

@@ -19,74 +19,49 @@ curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | b
 
 ## Quick Install
 
-### Using the installer (recommended)
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 ```
 
-This downloads the latest release for your platform, extracts it, and installs the tools where they will be found automatically:
+The installer always downloads the latest release and installs the tools **directly** into `~/.local/bin/`.
 
-- `~/.local/bin` (if `~/.local/bin` is already in your `PATH`)
-- `~/bin` (otherwise)
+No versioned directories. The `rules/` directory is placed next to the binaries (`~/.local/bin/rules/`) so sense finds them automatically.
 
-It then prints the exact `PATH` and `ICTX_RULES_ROOT` lines you should add.
+### After install
 
-### Manual install
-
-1. Download the right tarball for your platform from [Releases](https://github.com/ictx-ai/release/releases).
-
-2. Extract into a common location on your PATH (example):
+Add to your shell profile (e.g. `~/.zshrc` or `~/.bash_profile`):
 
 ```bash
-# ~/bin (common)
-mkdir -p ~/bin
-tar -xzf ictx-*-darwin-aarch64.tar.gz -C ~/bin
-
-# or ~/.local (if you have ~/.local/bin in PATH)
-mkdir -p ~/.local
-tar -xzf ictx-*-darwin-aarch64.tar.gz -C ~/.local
-```
-
-The tarball contains a versioned directory, e.g. `ictx-0.4.2-darwin-aarch64/`.
-
-After extraction you will have:
-
-```
-ictx-0.4.2-darwin-aarch64/
-├── bin/
-│   ├── sense
-│   ├── pulse
-│   ├── lens
-│   ├── config-extractor
-│   ├── python-extractor
-│   ├── java-extractor
-│   └── java-extractor-libs/   (JARs)
-├── rules/
-│   └── opengrep/
-│       └── core/
-│           └── ictx-rules.yaml
-├── MANIFEST.txt
-└── README.txt
-```
-
-3. Symlink or extend PATH + set rules (the installer does this for you):
-
-```bash
-# Example for ~/bin
-export PATH="$HOME/bin:$PATH"
-export ICTX_RULES_ROOT="$HOME/bin/rules"
-
-# or for ~/.local
 export PATH="$HOME/.local/bin:$PATH"
-export ICTX_RULES_ROOT="$HOME/.local/rules"
 ```
 
+Then:
 
-The tarball contains a versioned directory. After manual extraction you can either:
+```bash
+sense -V
+```
 
-- Add the versioned `bin/` directory to PATH temporarily, or
-- Symlink the binaries into a dir that's already on your PATH (e.g. `~/bin` or `~/.local/bin`) and point `ICTX_RULES_ROOT` at the extracted `rules/`.
+### Manual install (without the script)
+
+1. Download a tarball from [Releases](https://github.com/ictx-ai/release/releases).
+
+2. Extract the contents and place them directly (rules go next to the binaries):
+
+```bash
+tar -xzf ictx-*-darwin-aarch64.tar.gz
+cd ictx-*-darwin-aarch64
+
+mkdir -p ~/.local/bin
+cp bin/* ~/.local/bin/
+cp -r bin/java-extractor-libs ~/.local/bin/
+cp -r rules ~/.local/bin/
+
+chmod +x ~/.local/bin/sense ~/.local/bin/pulse ~/.local/bin/lens \
+         ~/.local/bin/config-extractor ~/.local/bin/python-extractor \
+         ~/.local/bin/java-extractor
+```
+
+3. Set the environment as above.
 
 Verify:
 
@@ -143,13 +118,13 @@ Runs as a long-lived agent (see `pulse` docs in source for control-plane usage).
 
 ## Updating
 
-Run the installer again:
+Just re-run the installer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 ```
 
-It will install the new version alongside the old one and update the symlinks in `~/bin` or `~/.local/bin`.
+It replaces the binaries in `~/.local/bin/` with the latest version.
 
 ## Troubleshooting
 
@@ -170,19 +145,18 @@ Make sure the binary name is `opengrep` or `semgrep`.
 
 **Rules not found**
 
-Ensure `ICTX_RULES_ROOT` points at the extracted `rules/` directory (must contain `opengrep/core/ictx-rules.yaml`).
+The installer puts `rules/` directly next to the binaries in `~/.local/bin/rules/`.
+Sense looks there automatically (next to the executable).
 
 **Permission denied on binaries**
 
 ```bash
-chmod +x ~/bin/ictx-*/bin/*
+chmod +x ~/.local/bin/sense ~/.local/bin/pulse ~/.local/bin/lens ...
 ```
 
 ## Release Process (for maintainers)
 
-- Creating a tag (e.g. `0.5.0`) on https://github.com/ictx-ai/ictx automatically triggers a build and creates a release here with all platform tarballs attached.
-- See `SETUP.md`, `.github/workflows/publish.yml` (this repo) and `.github/workflows/release.yml` (ictx monorepo).
-- The `helpers/release.sh` script (and `make release`) in the ictx repo is the official way to cut releases.
+See [SETUP.md](./SETUP.md).
 
 ## License
 

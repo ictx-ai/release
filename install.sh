@@ -4,55 +4,30 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 #
-# This script always installs the latest release.
-#
-# It detects a good location:
-#   - If $HOME/.local/bin is in PATH → installs commands to $HOME/.local/bin
-#   - Otherwise → installs commands directly to $HOME/bin
-#
-# You can override the base with PREFIX=... if needed.
+# This script always installs the latest release directly into
+# $HOME/.local/bin (no versioned directories). Rules are placed next
+# to the binaries so sense finds them automatically.
 #
 # Options (environment):
-#   PREFIX=$HOME/.local or $HOME/bin
 #   PLATFORM=...       Override (linux|darwin)
 #   ARCH=...           Override (x86_64|aarch64)
 #   NO_VERIFY=1        Skip the post-install sanity checks
 #
-# After install you will see the required PATH and ICTX_RULES_ROOT exports.
+# After install:
+#   export PATH="$HOME/.local/bin:$PATH"
 
 set -euo pipefail
 
 REPO="ictx-ai/release"
 
-# Choose where to install based on what the user already has on PATH.
-# Goal: make the binaries appear directly in a directory the user has in $PATH.
-if [[ ":$PATH:" == *":$HOME/.local/bin:"* ]]; then
-    # ~/.local/bin is on PATH → use ~/.local as base (binaries will land in ~/.local/bin)
-    DEFAULT_PREFIX="$HOME/.local"
-elif [[ ":$PATH:" == *":$HOME/bin:"* ]]; then
-    # ~/bin is on PATH → use ~/bin directly (binaries will land in ~/bin)
-    DEFAULT_PREFIX="$HOME/bin"
-else
-    DEFAULT_PREFIX="$HOME/bin"
-fi
+# Always install into ~/.local/bin (flat, no versioned folders).
+# Rules are placed next to the binaries (where sense expects them).
+BIN_DIR="$HOME/.local/bin"
 
 VERSION="${VERSION:-}"
-PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
 PLATFORM="${PLATFORM:-}"
 ARCH="${ARCH:-}"
 NO_VERIFY="${NO_VERIFY:-0}"
-
-# Where the commands and rules will actually be placed
-if [[ "$PREFIX" == "$HOME/.local" ]]; then
-  BIN_DIR="$PREFIX/bin"
-  RULES_DIR="$PREFIX/rules"
-elif [[ "$PREFIX" == "$HOME/bin" ]]; then
-  BIN_DIR="$PREFIX"
-  RULES_DIR="$HOME/.ictx/rules"
-else
-  BIN_DIR="$PREFIX/bin"
-  RULES_DIR="$PREFIX/rules"
-fi
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo ">> $*"; }
@@ -107,8 +82,7 @@ main() {
   local tarball="${pkg_name}.tar.gz"
   local url="https://github.com/${REPO}/releases/download/${VERSION}/${tarball}"
 
-  info "Installing ictx ${VERSION} for ${PLATFORM}-${ARCH}"
-  info "Commands → ${BIN_DIR}"
+  info "Installing ictx ${VERSION} for ${PLATFORM}-${ARCH} into $HOME/.local/bin"
 
   local tmpdir
   tmpdir="$(mktemp -d)"
@@ -125,51 +99,47 @@ main() {
     die "Need curl or wget to download"
   fi
 
-  # Always extract the full versioned bundle under a hidden location
-  local versions_dir="$HOME/.ictx/versions"
-  mkdir -p "$versions_dir"
-
   info "Extracting..."
-  tar -xzf "${tar_path}" -C "$versions_dir"
+  mkdir -p "$tmpdir/extract"
+  tar -xzf "${tar_path}" -C "$tmpdir/extract"
 
-  local extracted_dir="$versions_dir/${pkg_name}"
+  local extracted_dir="$tmpdir/extract/${pkg_name}"
   if [[ ! -d "$extracted_dir" ]]; then
-    extracted_dir="$versions_dir/ictx-${VERSION}-${PLATFORM}-${ARCH}"
+    extracted_dir="$tmpdir/extract/ictx-${VERSION}-${PLATFORM}-${ARCH}"
   fi
 
   if [[ ! -d "$extracted_dir" ]]; then
-    ls -la "$versions_dir" | head -10
-    die "Failed to find extracted package"
+    ls -la "$tmpdir/extract" | head -10
+    die "Failed to find extracted package inside tarball"
   fi
 
   info "Installing binaries to ${BIN_DIR}"
-  mkdir -p "${BIN_DIR}" "${RULES_DIR}"
+  mkdir -p "${BIN_DIR}"
 
-  # Symlink (or copy) the executables directly into the bin dir on PATH
+  # Install executables directly (no versioned folder)
   for b in sense pulse lens config-extractor python-extractor java-extractor; do
     if [[ -f "${extracted_dir}/bin/${b}" ]]; then
-      ln -sf "${extracted_dir}/bin/${b}" "${BIN_DIR}/${b}" || cp -f "${extracted_dir}/bin/${b}" "${BIN_DIR}/${b}"
+      cp -f "${extracted_dir}/bin/${b}" "${BIN_DIR}/${b}"
       chmod +x "${BIN_DIR}/${b}" || true
     fi
   done
 
-  # java-extractor-libs (needed next to java-extractor or in a known place)
+  # java-extractor-libs next to the wrapper
   if [[ -d "${extracted_dir}/bin/java-extractor-libs" ]]; then
     rm -rf "${BIN_DIR}/java-extractor-libs"
     cp -R "${extracted_dir}/bin/java-extractor-libs" "${BIN_DIR}/"
   fi
 
-  # rules
+  # rules/ next to the binaries (sense auto-discovers exe_dir/rules/opengrep/core)
   if [[ -d "${extracted_dir}/rules" ]]; then
-    rm -rf "${RULES_DIR}"
-    cp -R "${extracted_dir}/rules" "${RULES_DIR}"
+    rm -rf "${BIN_DIR}/rules"
+    cp -R "${extracted_dir}/rules" "${BIN_DIR}/"
   fi
 
 
   if [[ "$NO_VERIFY" != "1" ]]; then
     info "Verifying installation..."
     export PATH="${BIN_DIR}:${PATH}"
-    export ICTX_RULES_ROOT="${RULES_DIR}"
 
     if command -v sense >/dev/null 2>&1; then
       sense -V || true
@@ -177,16 +147,15 @@ main() {
       echo "WARN: sense not found on PATH yet"
     fi
 
-    if [[ -f "${RULES_DIR}/opengrep/core/ictx-rules.yaml" ]]; then
+    if [[ -d "${BIN_DIR}/rules/opengrep/core" ]]; then
       echo "  rules present: OK"
     else
-      echo "  WARN: rules/opengrep/core/ictx-rules.yaml not found under ${RULES_DIR}"
+      echo "  WARN: rules/opengrep/core not found next to binaries"
     fi
 
     echo ""
-    echo "Done. Add these to your shell profile (if not already present):"
-    echo "  export PATH=\"${BIN_DIR}:\$PATH\""
-    echo "  export ICTX_RULES_ROOT=\"${RULES_DIR}\""
+    echo "Done. Add to your shell profile:"
+    echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
     echo ""
     echo "Then run:"
     echo "  sense run /path/to/a/repo"
