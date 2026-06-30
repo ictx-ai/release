@@ -86,7 +86,8 @@ main() {
 
   local tmpdir
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  # Embed path in trap — local tmpdir is out of scope when EXIT runs under set -u.
+  trap "rm -rf '${tmpdir}'" EXIT
 
   local tar_path="${tmpdir}/${tarball}"
 
