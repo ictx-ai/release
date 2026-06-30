@@ -16,16 +16,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. 0.5.0). The release will be created with this tag.'
+        description: "Version tag (e.g. 0.5.0). The release will be created with this tag."
         required: true
         type: string
       prerelease:
-        description: 'Mark as pre-release?'
+        description: "Mark as pre-release?"
         required: false
         default: false
         type: boolean
       name:
-        description: 'Human friendly release name (optional)'
+        description: "Human friendly release name (optional)"
         required: false
         type: string
 
@@ -97,13 +97,14 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Release $TAG already exists — uploading additional assets if any."
           else
-            BODY="ictx ${VERSION} binary distribution.
+            BODY="ictx ${VERSION}
 
-            **Prerequisites**
-            - Java 17+
-            - opengrep (or semgrep) on PATH
+            Install:
+            curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 
-            See the README in this repository for install instructions."
+            Prerequisites: Java 17+, opengrep (or semgrep) on PATH.
+
+            See README.md for manual tarball install."
 
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \

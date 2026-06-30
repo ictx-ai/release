@@ -4,11 +4,18 @@ This repository (`ictx-ai/release`) is the public home for downloadable ictx bin
 
 ## How Releases Are Published
 
-- A maintainer creates a semver tag in the private `ictx-ai/ictx` repo (via `make release`).
-- CI builds for linux + darwin (x86_64 + aarch64).
-- Official releases (with platform tarballs) are published here in the public `ictx-ai/release` repo.
+1. Maintainer runs `make release` in the private `ictx-ai/ictx` repo (bumps version, tags, pushes).
+2. Tag push triggers CI in `ictx-ai/ictx` — builds three platform tarballs:
+   - `ictx-<ver>-linux-x86_64.tar.gz`
+   - `ictx-<ver>-darwin-aarch64.tar.gz`
+   - `ictx-<ver>-darwin-x86_64.tar.gz`
+3. CI uploads those assets to a GitHub Release **here** (`ictx-ai/release`) under the same semver tag.
 
-Main branch builds produce snapshot pre-releases in the private repo only.
+Pushes to `main` alone do **not** publish. Only semver tags do.
+
+`install.sh` downloads from:
+
+`https://github.com/ictx-ai/release/releases/download/<ver>/ictx-<ver>-<platform>-<arch>.tar.gz`
 
 ## Required Secret (in the private ictx repository)
 
