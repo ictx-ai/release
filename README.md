@@ -25,19 +25,6 @@ Verify:
 sense -V
 ```
 
-## Manual install
-
-Download a tarball and copy the contents:
-
-```bash
-tar -xzf ictx-*-darwin-aarch64.tar.gz
-cd ictx-*-darwin-aarch64
-mkdir -p ~/.local/bin
-cp -r bin/* ~/.local/bin/
-cp -r rules ~/.local/bin/
-chmod +x ~/.local/bin/*
-```
-
 ## Usage
 
 ```bash
