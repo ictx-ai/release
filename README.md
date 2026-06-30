@@ -2,10 +2,6 @@
 
 Binary releases for the ictx security tooling suite.
 
-**Downloads:** https://github.com/ictx-ai/release/releases
-
-Download **`ictx-<version>-<platform>-<arch>.tar.gz`** from [Releases](https://github.com/ictx-ai/release/releases). Ignore GitHub's auto **Source code** links (platform default; this repo is only `install.sh` + this README).
-
 ## Install
 
 ```bash
