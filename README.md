@@ -45,4 +45,4 @@ Re-run the one-liner installer.
 
 ## License
 
-See the ictx source repository.
+ICTX is licensed under the MIT License.
