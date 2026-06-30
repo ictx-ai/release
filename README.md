@@ -58,10 +58,6 @@ Re-run the one-liner installer.
 - opengrep/semgrep must be installed and in PATH.
 - Rules are shipped next to the binaries.
 
-## For maintainers
-
-See [SETUP.md](./SETUP.md).
-
 ## License
 
 See the ictx source repository.
