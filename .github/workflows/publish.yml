@@ -1,0 +1,126 @@
+name: Publish Release
+
+# This workflow helps publish ictx binary tarballs to the public release repository.
+#
+# Primary flow (recommended):
+#   The ictx monorepo CI builds the tarballs on tag push and then uses `gh release create`
+#   with a PAT (or GitHub App token) that has write access to ictx-ai/release.
+#
+# Manual / emergency flow:
+#   Use "Run workflow" and provide the version. Attach the tarballs via a prior
+#   build artifact or upload them directly in a follow-up step (or use the GitHub UI).
+#
+# You can also call this via repository_dispatch from the ictx repo.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. 0.5.0). The release will be created with this tag.'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release?'
+        required: false
+        default: false
+        type: boolean
+      name:
+        description: 'Human friendly release name (optional)'
+        required: false
+        type: string
+
+  # Allow the ictx CI (or other automation) to ask us to create a release.
+  repository_dispatch:
+    types: [publish-release]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release repo (for any metadata)
+        uses: actions/checkout@v5
+
+      - name: Resolve inputs
+        id: inputs
+        run: |
+          VERSION="${{ github.event.inputs.version || github.event.client_payload.version }}"
+          if [[ -z "$VERSION" ]]; then
+            echo "ERROR: version is required" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          PRERELEASE="${{ github.event.inputs.prerelease || github.event.client_payload.prerelease || 'false' }}"
+          echo "prerelease=${PRERELEASE}" >> "$GITHUB_OUTPUT"
+
+          NAME="${{ github.event.inputs.name || github.event.client_payload.name || '' }}"
+          if [[ -z "$NAME" ]]; then
+            NAME="ictx ${VERSION}"
+          fi
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+
+          TAG="$VERSION"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Download assets from calling workflow artifacts (if provided)
+        if: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.artifact_run_id != '' }}
+        uses: actions/download-artifact@v7
+        with:
+          # When dispatching you can pass the run id of the build job that produced the artifacts
+          run-id: ${{ github.event.client_payload.artifact_run_id }}
+          path: dist
+          # pattern / merge handled by caller
+          merge-multiple: true
+
+      - name: Collect any local dist tarballs (manual upload path)
+        run: |
+          mkdir -p dist
+          # If someone uploaded artifacts to this run via the UI or previous job, pick them up
+          find . -name 'ictx-*.tar.gz' -not -path './dist/*' -exec cp {} dist/ \; 2>/dev/null || true
+          ls -lh dist/ || true
+
+      - name: Create or update the GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.inputs.outputs.version }}"
+          TAG="${{ steps.inputs.outputs.tag }}"
+          NAME="${{ steps.inputs.outputs.name }}"
+          PRERELEASE="${{ steps.inputs.outputs.prerelease }}"
+
+          # Create the release (or update if it already exists for this tag)
+          # We use --generate-notes minimally; caller can provide better body via dispatch if wanted.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — uploading additional assets if any."
+          else
+            BODY="ictx ${VERSION} binary distribution.
+
+            **Prerequisites**
+            - Java 17+
+            - opengrep (or semgrep) on PATH
+
+            See the README in this repository for install instructions."
+
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$NAME" \
+              --notes "$BODY" \
+              $([[ "$PRERELEASE" == "true" ]] && echo "--prerelease" || true)
+          fi
+
+          # Upload any tarballs present in dist/
+          shopt -s nullglob
+          assets=(dist/ictx-*.tar.gz)
+          if (( ${#assets[@]} )); then
+            echo "Uploading ${#assets[@]} asset(s)..."
+            gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "No tarballs found in ./dist to upload."
+            echo "Attach them manually via the GitHub Releases UI or re-run with assets."
+          fi
+
+          echo "Release URL: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
