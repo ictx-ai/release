@@ -4,28 +4,55 @@
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 #
-# Options (environment):
-#   VERSION=0.4.2          Install specific version (default: latest)
-#   PREFIX=$HOME/bin       Install prefix (the tarball contents go under $PREFIX)
-#   PLATFORM=...           Override (linux|darwin)
-#   ARCH=...               Override (x86_64|aarch64)
-#   NO_VERIFY=1            Skip the post-install sanity checks
+# This script always installs the latest release.
 #
-# After install:
-#   export PATH="$HOME/bin:$PATH"
-#   export ICTX_RULES_ROOT="$HOME/bin/rules"
-#   sense -V
+# It detects a good location:
+#   - If $HOME/.local/bin is in PATH → installs commands to $HOME/.local/bin
+#   - Otherwise → installs commands directly to $HOME/bin
+#
+# You can override the base with PREFIX=... if needed.
+#
+# Options (environment):
+#   PREFIX=$HOME/.local or $HOME/bin
+#   PLATFORM=...       Override (linux|darwin)
+#   ARCH=...           Override (x86_64|aarch64)
+#   NO_VERIFY=1        Skip the post-install sanity checks
+#
+# After install you will see the required PATH and ICTX_RULES_ROOT exports.
 
 set -euo pipefail
 
 REPO="ictx-ai/release"
-DEFAULT_PREFIX="${HOME}/bin"
+
+# Choose where to install based on what the user already has on PATH.
+# Goal: make the binaries appear directly in a directory the user has in $PATH.
+if [[ ":$PATH:" == *":$HOME/.local/bin:"* ]]; then
+    # ~/.local/bin is on PATH → use ~/.local as base (binaries will land in ~/.local/bin)
+    DEFAULT_PREFIX="$HOME/.local"
+elif [[ ":$PATH:" == *":$HOME/bin:"* ]]; then
+    # ~/bin is on PATH → use ~/bin directly (binaries will land in ~/bin)
+    DEFAULT_PREFIX="$HOME/bin"
+else
+    DEFAULT_PREFIX="$HOME/bin"
+fi
 
 VERSION="${VERSION:-}"
 PREFIX="${PREFIX:-$DEFAULT_PREFIX}"
 PLATFORM="${PLATFORM:-}"
 ARCH="${ARCH:-}"
 NO_VERIFY="${NO_VERIFY:-0}"
+
+# Where the commands and rules will actually be placed
+if [[ "$PREFIX" == "$HOME/.local" ]]; then
+  BIN_DIR="$PREFIX/bin"
+  RULES_DIR="$PREFIX/rules"
+elif [[ "$PREFIX" == "$HOME/bin" ]]; then
+  BIN_DIR="$PREFIX"
+  RULES_DIR="$HOME/.ictx/rules"
+else
+  BIN_DIR="$PREFIX/bin"
+  RULES_DIR="$PREFIX/rules"
+fi
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo ">> $*"; }
@@ -57,17 +84,17 @@ resolve_latest_version() {
   fi
 }
 
-# If no version given, try to pick latest; fall back to asking user
+# Always install the latest release (unless VERSION is explicitly provided for advanced use)
 ensure_version() {
   if [[ -z "$VERSION" ]]; then
-    info "No VERSION specified, trying to detect latest release..."
+    info "Fetching latest release..."
     local latest
     latest="$(resolve_latest_version || true)"
     if [[ -n "$latest" ]]; then
       VERSION="$latest"
       info "Latest release: $VERSION"
     else
-      die "Could not determine latest version. Set VERSION=x.y.z explicitly."
+      die "Could not determine latest release from GitHub. Try again later."
     fi
   fi
 }
@@ -81,9 +108,7 @@ main() {
   local url="https://github.com/${REPO}/releases/download/${VERSION}/${tarball}"
 
   info "Installing ictx ${VERSION} for ${PLATFORM}-${ARCH}"
-  info "Target prefix: ${PREFIX}"
-
-  mkdir -p "${PREFIX}"
+  info "Commands → ${BIN_DIR}"
 
   local tmpdir
   tmpdir="$(mktemp -d)"
@@ -100,46 +125,51 @@ main() {
     die "Need curl or wget to download"
   fi
 
-  info "Extracting to ${PREFIX}"
-  tar -xzf "${tar_path}" -C "${PREFIX}"
+  # Always extract the full versioned bundle under a hidden location
+  local versions_dir="$HOME/.ictx/versions"
+  mkdir -p "$versions_dir"
 
-  local extracted_dir="${PREFIX}/${pkg_name}"
+  info "Extracting..."
+  tar -xzf "${tar_path}" -C "$versions_dir"
+
+  local extracted_dir="$versions_dir/${pkg_name}"
   if [[ ! -d "$extracted_dir" ]]; then
-    # Some releases may contain the dir at top level already
-    extracted_dir="${PREFIX}/ictx-${VERSION}-${PLATFORM}-${ARCH}"
+    extracted_dir="$versions_dir/ictx-${VERSION}-${PLATFORM}-${ARCH}"
   fi
 
   if [[ ! -d "$extracted_dir" ]]; then
-    # List what we got
-    ls -la "${PREFIX}" | head -20
-    die "Expected ${pkg_name}/ after extraction but did not find it under ${PREFIX}"
+    ls -la "$versions_dir" | head -10
+    die "Failed to find extracted package"
   fi
 
-  # Symlink convenience: put the bins + rules at top of PREFIX when possible
-  info "Creating convenience symlinks in ${PREFIX}"
-  mkdir -p "${PREFIX}/bin" "${PREFIX}/rules"
-  # Copy (or link) the executables
+  info "Installing binaries to ${BIN_DIR}"
+  mkdir -p "${BIN_DIR}" "${RULES_DIR}"
+
+  # Symlink (or copy) the executables directly into the bin dir on PATH
   for b in sense pulse lens config-extractor python-extractor java-extractor; do
     if [[ -f "${extracted_dir}/bin/${b}" ]]; then
-      ln -sf "${extracted_dir}/bin/${b}" "${PREFIX}/bin/${b}" || cp -f "${extracted_dir}/bin/${b}" "${PREFIX}/bin/${b}"
-      chmod +x "${PREFIX}/bin/${b}" || true
+      ln -sf "${extracted_dir}/bin/${b}" "${BIN_DIR}/${b}" || cp -f "${extracted_dir}/bin/${b}" "${BIN_DIR}/${b}"
+      chmod +x "${BIN_DIR}/${b}" || true
     fi
   done
-  # java-extractor-libs
+
+  # java-extractor-libs (needed next to java-extractor or in a known place)
   if [[ -d "${extracted_dir}/bin/java-extractor-libs" ]]; then
-    rm -rf "${PREFIX}/bin/java-extractor-libs"
-    cp -R "${extracted_dir}/bin/java-extractor-libs" "${PREFIX}/bin/"
+    rm -rf "${BIN_DIR}/java-extractor-libs"
+    cp -R "${extracted_dir}/bin/java-extractor-libs" "${BIN_DIR}/"
   fi
+
   # rules
   if [[ -d "${extracted_dir}/rules" ]]; then
-    rm -rf "${PREFIX}/rules"
-    cp -R "${extracted_dir}/rules" "${PREFIX}/"
+    rm -rf "${RULES_DIR}"
+    cp -R "${extracted_dir}/rules" "${RULES_DIR}"
   fi
+
 
   if [[ "$NO_VERIFY" != "1" ]]; then
     info "Verifying installation..."
-    export PATH="${PREFIX}/bin:${PATH}"
-    export ICTX_RULES_ROOT="${PREFIX}/rules"
+    export PATH="${BIN_DIR}:${PATH}"
+    export ICTX_RULES_ROOT="${RULES_DIR}"
 
     if command -v sense >/dev/null 2>&1; then
       sense -V || true
@@ -147,16 +177,16 @@ main() {
       echo "WARN: sense not found on PATH yet"
     fi
 
-    if [[ -f "${PREFIX}/rules/opengrep/core/ictx-rules.yaml" ]]; then
+    if [[ -f "${RULES_DIR}/opengrep/core/ictx-rules.yaml" ]]; then
       echo "  rules present: OK"
     else
-      echo "  WARN: rules/opengrep/core/ictx-rules.yaml not found under ${PREFIX}/rules"
+      echo "  WARN: rules/opengrep/core/ictx-rules.yaml not found under ${RULES_DIR}"
     fi
 
     echo ""
-    echo "Done. Add to your shell profile (if not already):"
-    echo "  export PATH=\"${PREFIX}/bin:\$PATH\""
-    echo "  export ICTX_RULES_ROOT=\"${PREFIX}/rules\""
+    echo "Done. Add these to your shell profile (if not already present):"
+    echo "  export PATH=\"${BIN_DIR}:\$PATH\""
+    echo "  export ICTX_RULES_ROOT=\"${RULES_DIR}\""
     echo ""
     echo "Then run:"
     echo "  sense run /path/to/a/repo"

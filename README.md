@@ -25,27 +25,27 @@ curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | b
 curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
 ```
 
-This downloads the latest release for your platform, extracts it, creates symlinks under `~/bin`, and prints the `PATH` + `ICTX_RULES_ROOT` exports you need.
+This downloads the latest release for your platform, extracts it, and installs the tools where they will be found automatically:
+
+- `~/.local/bin` (if `~/.local/bin` is already in your `PATH`)
+- `~/bin` (otherwise)
+
+It then prints the exact `PATH` and `ICTX_RULES_ROOT` lines you should add.
 
 ### Manual install
 
 1. Download the right tarball for your platform from [Releases](https://github.com/ictx-ai/release/releases).
 
-2. Extract:
-
-- `ictx-<version>-darwin-aarch64.tar.gz` — Apple Silicon (M1/M2/M3/M4)
-- `ictx-<version>-darwin-x86_64.tar.gz` — Intel Macs
-- `ictx-<version>-linux-x86_64.tar.gz` — Linux x86_64
-
-### 2. Extract into a directory on your PATH
+2. Extract into a common location on your PATH (example):
 
 ```bash
-# Example: extract to ~/bin/ictx-0.4.2 (recommended)
+# ~/bin (common)
 mkdir -p ~/bin
 tar -xzf ictx-*-darwin-aarch64.tar.gz -C ~/bin
 
-# Or extract directly into an existing directory already on PATH
-tar -xzf ictx-*-darwin-aarch64.tar.gz -C /usr/local
+# or ~/.local (if you have ~/.local/bin in PATH)
+mkdir -p ~/.local
+tar -xzf ictx-*-darwin-aarch64.tar.gz -C ~/.local
 ```
 
 The tarball contains a versioned directory, e.g. `ictx-0.4.2-darwin-aarch64/`.
@@ -70,17 +70,23 @@ ictx-0.4.2-darwin-aarch64/
 └── README.txt
 ```
 
-### 3. Add to PATH and set rules location
+3. Symlink or extend PATH + set rules (the installer does this for you):
 
 ```bash
-# Option A — add the versioned bin dir to PATH for this session
-export PATH="$HOME/bin/ictx-0.4.2-darwin-aarch64/bin:$PATH"
-export ICTX_RULES_ROOT="$HOME/bin/ictx-0.4.2-darwin-aarch64/rules"
-
-# Option B — symlink or copy the binaries into ~/bin (already on PATH for many users)
-ln -s ~/bin/ictx-0.4.2-darwin-aarch64/bin/* ~/bin/ 2>/dev/null || true
+# Example for ~/bin
+export PATH="$HOME/bin:$PATH"
 export ICTX_RULES_ROOT="$HOME/bin/rules"
+
+# or for ~/.local
+export PATH="$HOME/.local/bin:$PATH"
+export ICTX_RULES_ROOT="$HOME/.local/rules"
 ```
+
+
+The tarball contains a versioned directory. After manual extraction you can either:
+
+- Add the versioned `bin/` directory to PATH temporarily, or
+- Symlink the binaries into a dir that's already on your PATH (e.g. `~/bin` or `~/.local/bin`) and point `ICTX_RULES_ROOT` at the extracted `rules/`.
 
 Verify:
 
@@ -137,9 +143,13 @@ Runs as a long-lived agent (see `pulse` docs in source for control-plane usage).
 
 ## Updating
 
-1. Download the new tarball from Releases
-2. Extract it
-3. Update your `PATH` / symlinks / `ICTX_RULES_ROOT` to point at the new version
+Run the installer again:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
+```
+
+It will install the new version alongside the old one and update the symlinks in `~/bin` or `~/.local/bin`.
 
 ## Troubleshooting
 
