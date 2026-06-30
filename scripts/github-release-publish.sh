@@ -7,7 +7,7 @@
 #     --notes-file release-notes.md dist/*.tar.gz
 #
 # Env:
-#   GITHUB_TOKEN or PUBLIC_RELEASE_TOKEN — token with contents:write on --repo
+#   GITHUB_TOKEN — token with contents:write on --repo
 set -euo pipefail
 
 API_VERSION="2022-11-28"
@@ -43,7 +43,7 @@ done
 [[ -f "$NOTES_FILE" ]] || die "notes file not found: $NOTES_FILE"
 
 TOKEN="${GITHUB_TOKEN:-${PUBLIC_RELEASE_TOKEN:-}}"
-[[ -n "$TOKEN" ]] || die "GITHUB_TOKEN or PUBLIC_RELEASE_TOKEN is required"
+[[ -n "$TOKEN" ]] || die "GITHUB_TOKEN is required"
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
@@ -160,8 +160,26 @@ delete_github_source_archives() {
     ) | .id' <<<"$json")
 }
 
-echo "Removing GitHub auto-generated source archives (binaries-only release) ..."
-release_json="$(api GET "https://api.github.com/repos/${REPO}/releases/${release_id}")"
-delete_github_source_archives "$release_json"
+# GitHub may attach "Source code" as release assets asynchronously; retry deletes.
+echo "Removing auto source archive assets (if any) ..."
+for attempt in 1 2 3 4 5; do
+  release_json="$(api GET "https://api.github.com/repos/${REPO}/releases/${release_id}")"
+  ids="$(jq -r '.assets[]? | select(
+      .name == "Source code (zip)"
+      or .name == "Source code (tar.gz)"
+    ) | .id' <<<"$release_json")"
+  if [[ -z "$ids" ]]; then
+    break
+  fi
+  echo "  attempt ${attempt}: deleting source archive asset(s)"
+  delete_github_source_archives "$release_json"
+  sleep 3
+done
 
+echo ""
+echo "NOTE: GitHub always shows 'Source code (zip/tar.gz)' links on the release"
+echo "      page (zipball_url/tarball_url). Those cannot be removed via API."
+echo "      For ictx-ai/release they contain only install.sh + README — not the"
+echo "      ictx monorepo. Download the ictx-*-<platform>-<arch>.tar.gz assets."
+echo ""
 echo "Published: https://github.com/${REPO}/releases/tag/${TAG}"
