@@ -13,13 +13,15 @@ Snapshots from `main` continue to be published as pre-releases inside the `ictx`
 
 ## Required Secret (in the ictx repository)
 
-In the **ictx** repository settings → Secrets and variables → Actions, create:
+In the **private ictx** repository (https://github.com/ictx-ai/ictx) settings → Secrets and variables → Actions, create:
 
 - `PUBLIC_RELEASE_TOKEN`
 
 This token must have permission to create releases and upload assets to `ictx-ai/release`.
 
-Recommended: a fine-grained personal access token (PAT) scoped only to the `ictx-ai/release` repository with "Contents: Read and write".
+Recommended: a fine-grained personal access token (PAT) scoped **only** to the `ictx-ai/release` repository with "Contents: Read and write". 
+
+**Do not** put the secret in the public release repo. The workflow in the private ictx repo reads it via `secrets.PUBLIC_RELEASE_TOKEN`.
 
 You can also name it differently and update the workflow.
 
