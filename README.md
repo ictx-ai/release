@@ -1,6 +1,6 @@
-# ictx
+# ICTX
 
-Binary releases for the ictx security tooling suite.
+ICTX security tooling suite.
 
 **Public downloads:** https://github.com/ictx-ai/release/releases
 
@@ -25,8 +25,6 @@ curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | b
 
 The installer always downloads the latest release and installs the tools **directly** into `~/.local/bin/`.
 
-No versioned directories. The `rules/` directory is placed next to the binaries (`~/.local/bin/rules/`) so sense finds them automatically.
-
 ### After install
 
 Add to your shell profile (e.g. `~/.zshrc` or `~/.bash_profile`):
@@ -43,7 +41,7 @@ sense -V
 
 ### Manual install (without the script)
 
-1. Download a **platform tarball** from [Releases](https://github.com/ictx-ai/release/releases) — the file named `ictx-<version>-<platform>-<arch>.tar.gz`. Ignore any GitHub **Source code (zip/tar.gz)** entries; those are auto-generated repo snapshots, not the binary distribution.
+1. Download a tarball from [Releases](https://github.com/ictx-ai/release/releases).
 
 2. Extract the contents and place them directly (rules go next to the binaries):
 
@@ -93,7 +91,6 @@ See `sense --help` and `sense run --help` for all options.
 
 Common environment variables:
 
-- `ICTX_RULES_ROOT` — directory containing `rules/opengrep/core/ictx-rules.yaml`
 - `ICTX_OUTPUT_ROOT` — where sense writes per-repo artifacts (default `~/oss`)
 
 ### lens — interactive TUI viewer for findings

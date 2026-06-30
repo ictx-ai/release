@@ -17,37 +17,7 @@ Pushes to `main` alone do **not** publish. Only semver tags do.
 
 `https://github.com/ictx-ai/release/releases/download/<ver>/ictx-<ver>-<platform>-<arch>.tar.gz`
 
-## Required Secret (in the private ictx repository)
-
-In https://github.com/ictx-ai/ictx → Settings → Secrets and variables → Actions, create:
-
-- `PUBLIC_RELEASE_TOKEN`
-
-Use a fine-grained PAT with access **only** to `ictx-ai/release` and **Contents: Read and write**.
-
 (The workflow uses it to publish tarballs to this public repo on tag.)
-
-## Manual / Emergency Publish
-
-In this repo: Actions → "Publish Release" workflow.
-
-Or from a checkout with built tarballs (curl + GitHub REST API — no `gh` CLI):
-
-```bash
-export GITHUB_TOKEN="<PAT with contents:write on ictx-ai/release>"
-cat > /tmp/release-notes.md <<'EOF'
-ictx 0.5.0
-
-Install:
-curl -fsSL https://raw.githubusercontent.com/ictx-ai/release/main/install.sh | bash
-EOF
-./scripts/github-release-publish.sh \
-  --repo ictx-ai/release \
-  --tag 0.5.0 \
-  --title "ictx 0.5.0" \
-  --notes-file /tmp/release-notes.md \
-  dist/ictx-0.5.0-*.tar.gz
-```
 
 After publishing, users can run the installer:
 
